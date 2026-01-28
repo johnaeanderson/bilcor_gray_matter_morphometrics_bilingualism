@@ -1,0 +1,901 @@
+---
+title: "plot_correlations"
+author: "John"
+format: html
+editor: visual
+---
+
+## Quarto
+
+```{r}
+library(readr)
+library(ggseg)
+library(ggplot2)
+library(tidyverse)
+library(easystats)
+library(patchwork)
+# or for the newest atlases & bug fixes:
+#remotes::install_github("ggseg/ggseg3d")
+library(ggseg3d)
+library(readxl)
+```
+
+You can add options to executable code like this
+
+```{r}
+CT <- read_csv("~/Desktop/Centile_Brain_Data/Updated_November12_2025/centile_output/Centile_analysis_thickness.csv")
+
+#Fractal Dimensionality
+FD <- read_csv("~/Desktop/Centile_Brain_Data/ROI_aparc_DK40_fractaldimension.csv")
+#Gyrification
+Gyrif <- read_csv("~/Desktop/Centile_Brain_Data/ROI_aparc_DK40_toroGI20mm.csv")
+
+FA <- read_csv("~/Desktop/Centile_Brain_Data/Centile_Scores_WM/WM_Centile_data.csv") %>%
+  dplyr::select(Subject_ID, Age, Sex, ROI, centile) %>%        # keep what you need
+  dplyr::mutate(ROI = make.names(ROI)) %>%             # optional: ensures valid column names
+  pivot_wider(
+    names_from = ROI,
+    values_from = centile
+  )
+names(FA)[4:ncol(FA)] <- paste0(names(FA)[4:ncol(FA)], "_FA")
+
+
+
+FD <- FD %>%
+  rename_with(~ sub("^l", "lh_", .)) %>%
+  rename_with(~ sub("^r", "rh_", .))
+names(FD)[grepl("^(lh|rh)", names(FD))] <- paste0(names(FD)[grepl("^(lh|rh)", names(FD))], "_FD")
+
+
+
+Gyrif <- Gyrif %>%
+  rename_with(~ sub("^l", "lh_", .)) %>%
+  rename_with(~ sub("^r", "rh_", .))
+names(Gyrif)[grepl("^(lh|rh)", names(Gyrif))] <- paste0(names(Gyrif)[grepl("^(lh|rh)", names(Gyrif))], "_gyrif")
+
+
+demo2 <- read_excel("~/Desktop/Centile_Brain_Data/2025-11-12_BILCOR_descriptives.xlsx")
+
+demo <- demo2 %>% dplyr::select(ID, age, sex)
+
+demo <- demo %>%
+  dplyr::mutate(
+    Subject_ID = str_replace(ID, "^BILCOR", "sub-"),  # replace prefix
+    gender = recode(sex, Male = "M", Female = "F")  # recode values
+  ) %>%
+  dplyr::select(Subject_ID, age, gender)  # reorder/rename columns
+
+CRI <- demo2 %>%
+  dplyr::mutate(
+    Subject_ID = str_replace(ID, "^BILCOR", "sub-"),  # replace prefix
+    gender = recode(sex, Male = "M", Female = "F")  # recode values
+  ) %>%
+  dplyr::select(Subject_ID, age, gender,moca,blocks,vocab,highest_edu,CRI_Education,CRI_WorkingActivity,CRI_LeisureTime,CRI_Total)  # reorder/rename columns
+
+snr <- demo2 %>%
+  dplyr::mutate(
+    Subject_ID = str_replace(ID, "^BILCOR", "sub-"),  # replace prefix
+    gender = recode(sex, Male = "M", Female = "F")  # recode values
+  ) %>%
+  dplyr::select(Subject_ID, av_snr)  # reorder/rename columns
+
+verbalfluency <- read_csv("~/Desktop/Centile_Brain_Data/verbal_fluency.csv")
+scvol <- read_csv("~/Desktop/Centile_Brain_Data/Updated_November12_2025/centile_output/Centile_analysis_subcorticalvol.csv")
+surfacearea <-read_csv("~/Desktop/Centile_Brain_Data/Updated_November12_2025/centile_output/Centile_analysis_surfacearea.csv")
+names(surfacearea)[grepl("^(lh|rh)", names(surfacearea))] <- paste0(names(surfacearea)[grepl("^(lh|rh)", names(surfacearea))], "_sa")
+
+# Rename and reorder columns to match target variable names
+scvol <- scvol %>%
+  dplyr::select(
+    Subject_ID = `Subject_ID`,
+    `Left-Thalamus-Proper` = Lthal,
+    `Right-Thalamus-Proper` = Rthal,
+    `Left-Caudate` = Lcaud,
+    `Right-Caudate` = Rcaud,
+    `Left-Putamen` = Lput,
+    `Right-Putamen` = Rput,
+    `Left-Pallidum` = Lpal,
+    `Right-Pallidum` = Rpal,
+    `Left-Hippocampus` = Lhippo,
+    `Right-Hippocampus` = Rhippo,
+    `Left-Amygdala` = Lamyg,
+    `Right-Amygdala` = Ramyg,
+    `Left-Accumbens-area` = Laccumb,
+    `Right-Accumbens-area` = Raccumb
+  )
+
+LSBQ <-read_csv("~/Desktop/Centile_Brain_Data/LSBQ_Factor_Scores.csv")
+demographics <- merge(demo, LSBQ, by = "Subject_ID")
+
+dat <- merge(demographics, CT, by = "Subject_ID")
+#compute age group
+dat$age_group  <- factor(ifelse(dat$age < 30, "Young", "Old"))
+
+
+dat <- merge(dat, verbalfluency, by ="Subject_ID")
+dat <- merge(dat, scvol, by = "Subject_ID")
+dat <- merge(dat, surfacearea, by = "Subject_ID")
+#dat <- merge(dat, Gyrif, by = "Subject_ID")
+#dat <- merge(dat, FD, by = "Subject_ID")
+dat <- merge(dat, FA, by = "Subject_ID")
+dat$age
+
+target_col <- "Non_English_Social_Use"
+
+#roi_cols <- grep("^(lh|rh|Left|Right|FA)[_-]", names(dat), value = TRUE)
+roi_cols <- grep("^(lh|rh|Left|Right)[_-]|_FA$", names(dat), value = TRUE)
+
+
+# Run cor.test for each ROI
+cors_df <- lapply(roi_cols, function(col) {
+  test <- suppressWarnings(
+    cor.test(dat[[target_col]], dat[[col]], method = "kendall", use = "pairwise.complete.obs")
+  )
+  data.frame(
+    label = col,
+    spearman_r = test$estimate,
+    p_value = test$p.value
+  )
+}) %>%
+  bind_rows()
+
+
+  
+#   # Try to extract the correct p-value
+# # Run qad for each ROIlibrary(dplyr)
+# 
+# library(dplyr)
+# 
+# corsqad_df <- lapply(roi_cols, function(col) {
+#   test <- suppressWarnings(
+#     qad(dat[[target_col]], dat[[col]], p.value = TRUE)
+#   )
+# 
+#   # Normalize coef names to avoid hidden whitespace issues
+#   results_df <- as.data.frame(test$results)
+#   results_df$coef <- trimws(as.character(results_df$coef))
+#   if ("max.dependence" %in% results_df$coef) {
+#     pval <- results_df$p.values[results_df$coef == "max.dependence"]
+#   } else {
+#     message("⚠️ 'max.dependence' missing for: ", col)
+#     pval <- NA_real_
+#   }
+# 
+#   data.frame(
+#     label = col,
+#     max_dependence = test$max.dependence,
+#     p_value = pval
+#   )
+# }) %>%
+#   bind_rows()
+
+
+
+
+cors_df <- cors_df %>%
+  mutate(p_fdr = p.adjust(p_value, method = "fdr"))
+
+#dat <- dplyr::filter(dat, age_group=="Young")
+```
+
+The `echo: false` option disables the printing of code (only output is displayed).
+
+```{r}
+cors_df %>% 
+  ggplot() +
+  geom_brain(atlas = dk, 
+             position = position_brain(hemi ~ side),
+             aes(fill = spearman_r))+theme_void()+
+  scale_fill_gradient2(
+    low = "#5C2A9D",       # Color for low values
+    mid = "#FFF3E0",     # Color for the midpoint
+    high = "#FF7A3D",     # Color for high values
+    midpoint = 0       # The value at which the colors diverge
+  )
+sa_df <- cors_df %>%
+  filter(grepl("_sa$", label))
+sa_df <- sa_df %>%
+  mutate(label = sub("_sa$", "", label))
+
+sa_df %>% 
+  ggplot() +
+  geom_brain(atlas = dk, 
+             position = position_brain(hemi ~ side),
+             aes(fill = spearman_r))+theme_void()+
+  scale_fill_gradient2(
+    low = "#5C2A9D",       # Color for low values
+    mid = "#FFF3E0",     # Color for the midpoint
+    high = "#FF7A3D",     # Color for high values
+    midpoint = 0       # The value at which the colors diverge
+  )
+
+cors_df %>%
+  ggplot() +
+  geom_brain(atlas = dk, 
+             position = position_brain(hemi ~ side),
+             aes(fill = spearman_r))+theme_void()+
+  scale_fill_gradient2(
+    low = "#5C2A9D",       # Color for low values
+    mid = "#FFF3E0",     # Color for the midpoint
+    high = "#FF7A3D",     # Color for high values
+    midpoint = 0       # The value at which the colors diverge
+  )
+
+# Create a filtered version of the aseg atlas
+aseg_coronal <- aseg
+aseg_coronal$data <- aseg$data %>%
+  filter(side == "coronal")
+
+#gyrif_df <- cors_df %>%
+#  filter(grepl("_gyrif$", label))
+#gyrif_df <- sa_df %>%
+#  mutate(label = sub("_gyrif$", "", label))
+#
+#  
+#gyrif_df %>% 
+#  ggplot() +
+#  geom_brain(atlas = dk, 
+#             position = position_brain(hemi ~ side),
+#             aes(fill = spearman_r))+theme_void()+
+#  scale_fill_gradient2(
+#    low = "#5C2A9D",       # Color for low values
+#    mid = "#FFF3E0",     # Color for the midpoint
+#    high = "#FF7A3D",     # Color for high values
+#    midpoint = 0       # The value at which the colors diverge
+#  )
+#
+#fd_df <- cors_df %>%
+#  filter(grepl("_FD$", label))
+#fd_df <- fd_df %>%
+#  mutate(label = sub("_FD$", "", label))
+#
+#fd_df %>% 
+#  ggplot() +
+#  geom_brain(atlas = dk, 
+#             position = position_brain(hemi ~ side),
+#             aes(fill = spearman_r))+theme_void()+
+#  scale_fill_gradient2(
+#    low = "#5C2A9D",       # Color for low values
+#    mid = "#FFF3E0",     # Color for the midpoint
+#    high = "#FF7A3D",     # Color for high values
+#    midpoint = 0       # The value at which the colors diverge
+
+```
+
+```{r}
+library(dplyr)
+library(TExPosition)
+library(TInPosition)
+library(data4PCCAR)
+library(PTCA4CATA)
+library(splines)
+
+#dat$FR_VF2 <- data1$FR_VF^2
+
+# behavioral data
+data1 <- dat %>%
+  dplyr::select(
+    `Non_English_Home_Use_And_Proficiency`,
+    `Non_English_Social_Use`,
+    English_Proficiency,
+    Composite_Factor_Score,Eng_VF, FR_VF, vf_ratio
+  )
+
+data3 <- dat %>%
+  dplyr::select(age, age_group,
+    `Non_English_Home_Use_And_Proficiency`,
+    `Non_English_Social_Use`,
+    English_Proficiency,
+    Composite_Factor_Score,Eng_VF, FR_VF, vf_ratio
+  )
+
+library(dplyr)
+
+data1_resid <- data3 %>%
+  group_by(age_group) %>%
+  mutate(across(
+    c(
+      `Non_English_Home_Use_And_Proficiency`,
+      `Non_English_Social_Use`,
+      English_Proficiency,
+      Composite_Factor_Score,
+      Eng_VF,
+      FR_VF,
+      vf_ratio
+    ),
+    ~ resid(lm(.x ~ age, na.action = na.exclude)),
+    .names = "{.col}_resid"
+  )) %>%
+  ungroup()
+
+data1_resid <- data1_resid %>%
+  dplyr::select(ends_with("_resid"))
+
+
+#data1$Sex <- as.numeric(as.factor(data1$Sex))
+
+# brain ROI data — correctly select lh_ and rh_ columns
+#data2 <- dat %>%
+#  dplyr::select(matches("^(lh_|rh_|Left-|Right-)"))
+
+data2 <- dat %>%
+  dplyr::select(matches("^(lh|rh|Left|Right)[_-]|_FA$"))
+
+
+# Make sure all columns are numeric (important for PLS)
+data2 <- data2 %>% mutate(across(everything(), as.numeric))
+data1 <- data1_resid %>% mutate(across(where(is.character), as.factor))
+
+# Run two-table PLS
+pls.res <- tepPLS(
+  DATA1 = data1,
+  DATA2 = data2,
+graphs=FALSE
+)
+
+
+
+```
+
+### to correlate
+
+```{r}
+lv1_x <- pls.res$TExPosition.Data$lx[,1]
+lv1_y <-  pls.res$TExPosition.Data$ly[,1]
+
+pls_loadings_cor <- as.data.frame(cbind(dat$Subject_ID, dat$age_group, lv1_x, lv1_y))
+colnames(pls_loadings_cor) <- c("Subject_ID","age_group" ,"lv1_behav","lv1_brain")
+pls_loadings_cor <- merge(pls_loadings_cor, CRI, by = "Subject_ID")
+pls_loadings_cor <- merge(pls_loadings_cor, snr, by = "Subject_ID")
+pls_loadings_cor$lv1_behav <- as.numeric(pls_loadings_cor$lv1_behav)
+pls_loadings_cor$lv1_brain <- as.numeric(pls_loadings_cor$lv1_brain)
+
+edu_levels <- c(
+    "High School or GED",
+    "Associates Degree or College Diploma",
+    "Bachelors Degree",
+    "Masters Degree",
+    "Graduate Degree"
+)
+
+pls_loadings_cor$highest_edu_num <-
+    as.numeric(
+        factor(
+            pls_loadings_cor$highest_edu,
+            levels = edu_levels,
+            ordered = TRUE
+        )
+    )
+
+```
+
+```{r}
+# permuation tests byColumns
+nIter <- 1000 #set the number of iterations to run the permutation test 
+
+perm.bycol <- perm4PLSC(data1, 
+                        data2, 
+                        permType = 'byColumns', # the default type is byMat which permute by labels of observations
+                                                # byColumns option permutes all cols of each data matrix independently
+                        nIter = nIter)
+
+scree      <- PlotScree(ev = pls.res$TExPosition.Data$eigs,
+                        p.ev = perm.bycol$pEigenvalues,
+                        title = "Explained Variance per Dimension + Permutation Tests",
+                        plotKaiser = TRUE)
+```
+
+```{r}
+resBoot4PLSC <- Boot4PLSC(data1, # First Data matrix 
+                          data2, # Second Data matrix
+                          nIter = 1000, # How many iterations
+                      Fi = pls.res$TExPosition.Data$fi,
+                      Fj = pls.res$TExPosition.Data$fj,
+                      nf2keep = 3,
+                      critical.value = 2,
+                      # To be implemented later
+                      # has no effect currently
+                      alphaLevel = .05)
+
+BR.I <- resBoot4PLSC$bootRatios.i
+BR.J <- resBoot4PLSC$bootRatios.j
+```
+
+```{r}
+# Convert to tidy format for ggplot
+library(ggchicklet)
+brI_df <- BR.I %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column("Variable") %>%
+  rename(BSR = `Dimension 1`)   # choose LV1
+
+# Optional ordering by effect size
+brI_df <- brI_df %>% mutate(Variable = reorder(Variable, BSR))
+
+dev.new()
+library(dplyr)
+library(forcats)
+
+brI_df <- brI_df %>%
+           mutate(sign_group = ifelse(BSR > 0, "Positive BSR", "Negative BSR"))
+
+pls_lv1_behav <- ggplot(brI_df, 
+                        aes(x = Variable, y = BSR, fill = sign_group)) +
+    geom_chicklet() +
+    coord_flip() +
+    scale_fill_manual(values = c("Positive BSR" = "#F2A900",
+                                 "Negative BSR" = "#1F77B4"),
+                      name = "Direction") +
+    geom_hline(yintercept = 2, linetype = "dashed", color = "black") +
+    labs(title = "Behavioral Bootstrap Ratios (LV1)",
+         y = "Bootstrap Ratio",
+         x = NULL) +
+    theme_minimal(base_size = 14) +
+    geom_hline(yintercept = 0)+theme_modern()+ theme(legend.position = "bottom")
+
+```
+
+```{r}
+# Convert brain data
+brJ_df <- BR.J %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column("label") %>%
+  rename(BSR = `Dimension 1`)  %>%
+  mutate(
+    outline_color = ifelse(abs(BSR) > 2, "black", "grey70"),
+    outline_size  = ifelse(abs(BSR) > 2, 2, 0.3)
+  )
+
+pls_lv1_brain <- brJ_df %>%
+  ggplot() +
+  geom_brain(
+    atlas = dk,
+    position = position_brain(hemi ~ side),
+    aes(fill = BSR,
+        colour = outline_color,
+        linewidth = outline_size)
+  ) +
+  scale_fill_gradient2(
+    low = "#006eaf",
+    mid = "#FFF3E0",
+    high = "#feae00",
+    midpoint = 0,
+    limits = c(-4, 4),
+    name = "Bootstrap Ratio"
+  ) +
+  scale_colour_identity() +     # use actual color values from outline_color
+  scale_linewidth_identity() +  # use actual numeric values from outline_size
+  theme_void() +
+  ggtitle("Cortical Thickness BSR, LV1")
+
+brsa_df <- brJ_df %>%
+  filter(grepl("_sa$", label))
+brsa_df <- brsa_df %>%
+  mutate(label = sub("_sa$", "", label))
+
+pls_lv1_brain_sa <- brsa_df %>%
+  ggplot() +
+  geom_brain(
+    atlas = dk,
+    position = position_brain(hemi ~ side),
+    aes(fill = BSR,
+        colour = outline_color,
+        linewidth = outline_size)
+  ) +
+  scale_fill_gradient2(
+    low = "#006eaf",
+    mid = "#FFF3E0",
+    high = "#feae00",
+    midpoint = 0,
+    limits = c(-4, 4),
+    name = "Bootstrap Ratio"
+  ) +
+  scale_colour_identity() +     # use actual color values from outline_color
+  scale_linewidth_identity() +  # use actual numeric values from outline_size
+  theme_void() +
+  ggtitle("Surface Area BSR, LV1")
+
+#gyrification
+#brgyrif_df <- brJ_df %>%
+#  filter(grepl("_gyrif$", label))
+#brgyrif_df <- brsa_df %>%
+#  mutate(label = sub("_gyrif$", "", label))
+#
+#pls_lv1_brain_gyrif <- brgyrif_df %>%
+#  ggplot() +
+#  geom_brain(
+#    atlas = dk,
+#    position = position_brain(hemi ~ side),
+#    aes(fill = BSR,
+#        colour = outline_color,
+#        linewidth = outline_size)
+#  ) +
+#  scale_fill_gradient2(
+#    low = "#006eaf",
+#    mid = "#FFF3E0",
+#    high = "#feae00",
+#    midpoint = 0,
+#    limits = c(-4, 4),
+#    name = "Bootstrap Ratio"
+#  ) +
+#  scale_colour_identity() +     # use actual color values from outline_color
+#  scale_linewidth_identity() +  # use actual numeric values from outline_size
+#  theme_void() +
+#  ggtitle("Toro Gyrification BSR, LV1")
+
+#fractal_dimensionality
+#brFD_df <- brJ_df %>%
+#  filter(grepl("_FD$", label))
+#brFD_df <- brFD_df %>%
+#  mutate(label = sub("_FD$", "", label))
+#
+#pls_lv1_brain_FD <- brFD_df %>%
+#  ggplot() +
+#  geom_brain(
+#    atlas = dk,
+#    position = position_brain(hemi ~ side),
+#    aes(fill = BSR,
+#        colour = outline_color,
+#        linewidth = outline_size)
+#  ) +
+#  scale_fill_gradient2(
+#    low = "#006eaf",
+#    mid = "#FFF3E0",
+#    high = "#feae00",
+#    midpoint = 0,
+#    limits = c(-4, 4),
+#    name = "Bootstrap Ratio"
+#  ) +
+#  scale_colour_identity() +     # use actual color values from outline_color
+#  scale_linewidth_identity() +  # use actual numeric values from outline_size
+#  theme_void() +
+#  ggtitle("Fractal Dimensionality BSR, LV1")
+
+# Create a coronal-only (subcortical) aseg atlas
+aseg_coronal <- aseg
+aseg_coronal$data <- aseg$data %>%
+  filter(side == "coronal")
+
+# Plot BSR values for subcortical ROIs
+subcort_pls_lv1_brain <- brJ_df %>%
+  ggplot() +
+  geom_brain(
+    atlas = aseg_coronal,
+    aes(fill = BSR,
+        colour = outline_color,
+        linewidth = outline_size)
+  ) +
+  scale_fill_gradient2(
+    low = "#006eaf",
+    mid = "#FFF3E0",
+    high = "#feae00",
+    midpoint = 0,
+    limits = c(-4, 4),
+    name = "Bootstrap Ratio"
+  ) +
+  scale_colour_identity() +     # Use outline_color directly (e.g., highlight significant BSRs)
+  scale_linewidth_identity() +  # Use outline_size directly for variable edge widths
+  theme_void() +
+  ggtitle("Subcortical Vols, LV1")
+
+subcort_pls_lv1_brain
+pls_lv1_behav + pls_lv1_brain + pls_lv1_brain_sa  + subcort_pls_lv1_brain 
+```
+
+\
+
+```{r}
+lv.1 <- cbind(pls.res$TExPosition.Data$lx[,1],pls.res$TExPosition.Data$ly[,1])
+
+age_levels <- levels(factor(dat$age_group))
+age_cols <- setNames(scales::hue_pal()(length(age_levels)), age_levels)
+# raw observations: one per row of lv.1 (subjects)
+col_raw  <- age_cols[rownames(lv.1)]
+
+# means: one per row of lv.1.mean (groups)
+col_mean <- age_cols[rownames(lv.1.mean)]
+
+rownames(lv.1) <- dat$age_group
+lv.1.mean <- getMeans(lv.1, dat$age_group)
+lv.1.mean.boot <- Boot4Mean(lv.1, dat$age_group)
+# Raw observations (no axes)
+plot1.lv.1 <- createFactorMap(
+    lv.1,
+    col.points = col_raw,
+    col.labels = col_raw,
+    alpha.points = 0.2,
+    contributions = FALSE,
+    col.axes = NA,        # <<< remove axes
+    alpha.axes = 0        # <<< just in case
+)
+
+# Means (no axes)
+plot1.mean <- createFactorMap(
+    lv.1.mean,
+    col.points = col_mean,
+    col.labels = col_mean,
+    cex = 4,
+    pch = 17,
+    alpha.points = 0.8,
+    contributions = FALSE,
+    col.axes = NA,       
+    alpha.axes = 0
+)
+
+# Bootstrap confidence ellipses remain the same
+plot1.meanCI <- MakeCIEllipses(
+    lv.1.mean.boot$BootCube[,1:2,],
+    col = col_mean
+)
+
+# Combine layers
+plot1 <- plot1.lv.1$zeMap_background + 
+    plot1.lv.1$zeMap_dots + 
+    plot1.mean$zeMap_dots + 
+    plot1.mean$zeMap_text + 
+    plot1.meanCI +
+    ggtitle("Latent 1: Observations Factor Scores (by age group)") +
+    labs(y = "Latent 1 - y", x = "Latent 1 - x")
+
+plot1 + theme_modern()
+```
+
+Second LV
+
+```{r}
+# --- LV2: Behavioral bar plot (keep LV1 intact) ---
+brI_df_lv2 <- BR.I %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column("Variable") %>%
+  rename(BSR = `Dimension 2`) %>%     # choose LV2
+  mutate(Variable = reorder(Variable, BSR))
+
+dev.new()
+pls_lv2_behav <- ggplot(brI_df_lv2, aes(x = Variable, y = BSR, fill = BSR > 0)) +
+  geom_chicklet() +
+  coord_flip() +
+  scale_fill_manual(values = c("TRUE" = "red", "FALSE" = "blue")) +
+  geom_hline(yintercept = c(-2, 2), linetype = "dashed", color = "black") +
+  labs(title = "Behavioral Bootstrap Ratios (LV2)",
+       y = "Bootstrap Ratio", x = NULL) +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "none") +
+  geom_hline(yintercept = 0)
+
+
+```
+
+```{r}
+# --- LV2: Brain maps (cortex, surface area, subcortex) ---
+brJ_df_lv2 <- BR.J %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column("label") %>%
+  rename(BSR = `Dimension 2`) %>%
+  mutate(
+    outline_color = ifelse(abs(BSR) > 2, "black", "grey70"),
+    outline_size  = ifelse(abs(BSR) > 2, 2, 0.3)
+  )
+
+pls_lv2_brain <- brJ_df_lv2 %>%
+  ggplot() +
+  geom_brain(
+    atlas = dk,
+    position = position_brain(hemi ~ side),
+    aes(fill = BSR,
+        colour = outline_color,
+        linewidth = outline_size)
+  ) +
+  scale_fill_gradient2(
+    low = "blue", mid = "white", high = "red",
+    midpoint = 0, limits = c(-4, 4),
+    name = "Bootstrap Ratio"
+  ) +
+  scale_colour_identity() +
+  scale_linewidth_identity() +
+  theme_void() +
+  ggtitle("Cortical Thickness BSR, LV2")
+
+brsa_df_lv2 <- brJ_df_lv2 %>%
+  filter(grepl("_sa$", label)) %>%
+  mutate(label = sub("_sa$", "", label))
+
+pls_lv2_brain_sa <- brsa_df_lv2 %>%
+  ggplot() +
+  geom_brain(
+    atlas = dk,
+    position = position_brain(hemi ~ side),
+    aes(fill = BSR,
+        colour = outline_color,
+        linewidth = outline_size)
+  ) +
+  scale_fill_gradient2(
+    low = "blue", mid = "white", high = "red",
+    midpoint = 0, limits = c(-4, 4),
+    name = "Bootstrap Ratio"
+  ) +
+  scale_colour_identity() +
+  scale_linewidth_identity() +
+  theme_void() +
+  ggtitle("Surface Area BSR, LV2")
+
+# Create a coronal-only aseg atlas (new object so LV1 code keeps working)
+aseg_coronal_lv2 <- aseg
+aseg_coronal_lv2$data <- aseg$data %>%
+  filter(side == "coronal")
+
+subcort_pls_lv2_brain <- brJ_df_lv2 %>%
+  ggplot() +
+  geom_brain(
+    atlas = aseg_coronal_lv2,
+    aes(fill = BSR,
+        colour = outline_color,
+        linewidth = outline_size)
+  ) +
+  scale_fill_gradient2(
+    low = "blue", mid = "white", high = "red",
+    midpoint = 0, limits = c(-4, 4),
+    name = "Bootstrap Ratio"
+  ) +
+  scale_colour_identity() +
+  scale_linewidth_identity() +
+  theme_void() +
+  ggtitle("Subcortical Vols, LV2")
+
+# --- Optional: show LV2 panel (patchwork) ---
+pls_lv2_behav + pls_lv2_brain + pls_lv2_brain_sa + subcort_pls_lv2_brain
+
+```
+
+```{r}
+
+lv.2 <- cbind(pls.res$TExPosition.Data$lx[,2],pls.res$TExPosition.Data$ly[,2])
+
+# raw observations: one per row of lv.1 (subjects)
+col_raw  <- age_cols[rownames(lv.2)]
+
+# means: one per row of lv.1.mean (groups)
+col_mean <- age_cols[rownames(lv.2.mean)]
+
+rownames(lv.2) <- dat$age_group
+lv.2.mean <- getMeans(lv.2, dat$age_group)
+lv.2.mean.boot <- Boot4Mean(lv.2, dat$age_group)
+
+
+rownames(lv.2) <- dat$age_group
+lv.2.mean <- getMeans(lv.2, dat$age_group)
+lv.2.mean.boot <- Boot4Mean(lv.2, dat$age_group)
+# Raw observations (no axes)
+plot2.lv.2 <- createFactorMap(
+    lv.2,
+    col.points = col_raw,
+    col.labels = col_raw,
+    alpha.points = 0.2,
+    contributions = FALSE,
+    col.axes = NA,        # <<< remove axes
+    alpha.axes = 0        # <<< just in case
+)
+
+# Means (no axes)
+plot2.mean <- createFactorMap(
+    lv.2.mean,
+    col.points = col_mean,
+    col.labels = col_mean,
+    cex = 4,
+    pch = 17,
+    alpha.points = 0.8,
+    contributions = FALSE,
+    col.axes = NA,       
+    alpha.axes = 0
+)
+
+# Bootstrap confidence ellipses remain the same
+plot2.meanCI <- MakeCIEllipses(
+    lv.2.mean.boot$BootCube[,1:2,],
+    col = col_mean
+)
+
+# Combine layers
+plot2 <- plot2.lv.2$zeMap_background + 
+    plot2.lv.2$zeMap_dots + 
+    plot2.mean$zeMap_dots + 
+    plot2.mean$zeMap_text + 
+    plot2.meanCI +
+    ggtitle("Latent 2: Observations Factor Scores (by age group)") +
+    labs(y = "Latent 2 - y", x = "Latent 2 - x")
+
+plot2 + theme_modern()
+```
+
+```{python}
+import os
+import numpy as np
+import pandas as pd
+
+from brainstat.stats.terms import FixedEffect, MixedEffect
+from brainstat.stats.SLM import SLM
+
+# --- EDIT THESE TWO PATHS if you want to run SLM ---
+design_path = "/Users/johnanderson/Desktop/Centile_Brain_Data/design.csv"
+Y_path      = "/Users/johnanderson/Desktop/Centile_Brain_Data/Y_matrix.csv"
+
+# --- Your BSR file (this one you already have working) ---
+bsr_path = "/Users/johnanderson/Desktop/Centile_Brain_Data/BSR_PLScortical.csv"
+
+# Load BSR
+if not os.path.exists(bsr_path):
+    raise FileNotFoundError(f"BSR file not found: {bsr_path}")
+
+bsr = pd.read_csv(bsr_path, index_col=0).to_numpy().squeeze()
+print("Loaded bsr:", bsr.shape)
+
+thr = 3.0
+sig = np.abs(bsr) >= thr
+print(f"{sig.sum()} / {sig.size} pass |BSR| >= {thr}")
+
+
+# Try to load df and Y (optional)
+df = None
+Y = None
+
+if os.path.exists(design_path):
+    df = pd.read_csv(design_path)
+    print("Loaded df:", df.shape)
+    print("df columns:", list(df.columns))
+else:
+    print("Design file not found (SLM will be skipped):", design_path)
+
+if os.path.exists(Y_path):
+    Y = pd.read_csv(Y_path, index_col=0).to_numpy()
+    print("Loaded Y:", Y.shape)
+else:
+    print("Y matrix file not found (SLM will be skipped):", Y_path)
+
+# If df and Y exist, run SLM; otherwise stop cleanly.
+if df is not None and Y is not None:
+    required = ["AGE", "SEX", "SUB_ID"]
+    missing_cols = [c for c in required if c not in df.columns]
+    if missing_cols:
+        raise ValueError(f"Design file is missing columns: {missing_cols}")
+
+    if Y.shape[0] != df.shape[0]:
+        raise ValueError(f"Row mismatch: Y has {Y.shape[0]} rows, df has {df.shape[0]}")
+
+    model = FixedEffect(df["AGE"]) + FixedEffect(df["SEX"]) + MixedEffect(df["SUB_ID"])
+    contrast = df["AGE"]
+
+    slm = SLM(model=model, contrast=contrast, two_tailed=False, correction=["fdr"])
+    slm.fit(Y)
+
+    print("SLM fit done. t shape:", np.array(slm.t).shape)
+else:
+    print("Skipping SLM because df and/or Y are not available.")
+    print("If you only meant to work with BSR, you can threshold it next.")
+
+
+```
+
+```{python}
+from brainstat.datasets import fetch_gradients
+import numpy as np
+
+# These are already DK68 region means!
+gradients = fetch_gradients()   # shape (68, 10)
+
+# gradient 1
+grad1_parcel = gradients[:, 0]
+
+bsr_py = np.asarray(bsr)  # reticulate R numeric vector → NumPy
+
+
+r = np.corrcoef(bsr_py, grad1_parcel)[0, 1]
+print("Correlation with Gradient 1:", r)
+
+```
+
+WM Vol
+
+```{r}
+wmvol <- read_csv("/Users/johnanderson/Desktop/Centile_Brain_Data/bilcor/BIDS/derivatives/CAT12_Derivatives/ROI_lpba40_Vwm.csv")
+
+cors_df <- merge(pls_loadings_cor, wmvol, by = "Subject_ID")
+```
