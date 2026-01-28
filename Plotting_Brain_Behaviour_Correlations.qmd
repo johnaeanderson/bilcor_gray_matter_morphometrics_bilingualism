@@ -25,22 +25,6 @@ You can add options to executable code like this
 ```{r}
 CT <- read_csv("~/Desktop/Centile_Brain_Data/Updated_November12_2025/centile_output/Centile_analysis_thickness.csv")
 
-#Fractal Dimensionality
-FD <- read_csv("~/Desktop/Centile_Brain_Data/ROI_aparc_DK40_fractaldimension.csv")
-#Gyrification
-Gyrif <- read_csv("~/Desktop/Centile_Brain_Data/ROI_aparc_DK40_toroGI20mm.csv")
-
-FA <- read_csv("~/Desktop/Centile_Brain_Data/Centile_Scores_WM/WM_Centile_data.csv") %>%
-  dplyr::select(Subject_ID, Age, Sex, ROI, centile) %>%        # keep what you need
-  dplyr::mutate(ROI = make.names(ROI)) %>%             # optional: ensures valid column names
-  pivot_wider(
-    names_from = ROI,
-    values_from = centile
-  )
-names(FA)[4:ncol(FA)] <- paste0(names(FA)[4:ncol(FA)], "_FA")
-
-
-
 FD <- FD %>%
   rename_with(~ sub("^l", "lh_", .)) %>%
   rename_with(~ sub("^r", "rh_", .))
@@ -81,6 +65,7 @@ snr <- demo2 %>%
 
 verbalfluency <- read_csv("~/Desktop/Centile_Brain_Data/verbal_fluency.csv")
 scvol <- read_csv("~/Desktop/Centile_Brain_Data/Updated_November12_2025/centile_output/Centile_analysis_subcorticalvol.csv")
+
 surfacearea <-read_csv("~/Desktop/Centile_Brain_Data/Updated_November12_2025/centile_output/Centile_analysis_surfacearea.csv")
 names(surfacearea)[grepl("^(lh|rh)", names(surfacearea))] <- paste0(names(surfacearea)[grepl("^(lh|rh)", names(surfacearea))], "_sa")
 
@@ -640,111 +625,7 @@ plot1 <- plot1.lv.1$zeMap_background +
 plot1 + theme_modern()
 ```
 
-Second LV
 
-```{r}
-# --- LV2: Behavioral bar plot (keep LV1 intact) ---
-brI_df_lv2 <- BR.I %>%
-  as.data.frame() %>%
-  tibble::rownames_to_column("Variable") %>%
-  rename(BSR = `Dimension 2`) %>%     # choose LV2
-  mutate(Variable = reorder(Variable, BSR))
-
-dev.new()
-pls_lv2_behav <- ggplot(brI_df_lv2, aes(x = Variable, y = BSR, fill = BSR > 0)) +
-  geom_chicklet() +
-  coord_flip() +
-  scale_fill_manual(values = c("TRUE" = "red", "FALSE" = "blue")) +
-  geom_hline(yintercept = c(-2, 2), linetype = "dashed", color = "black") +
-  labs(title = "Behavioral Bootstrap Ratios (LV2)",
-       y = "Bootstrap Ratio", x = NULL) +
-  theme_minimal(base_size = 14) +
-  theme(legend.position = "none") +
-  geom_hline(yintercept = 0)
-
-
-```
-
-```{r}
-# --- LV2: Brain maps (cortex, surface area, subcortex) ---
-brJ_df_lv2 <- BR.J %>%
-  as.data.frame() %>%
-  tibble::rownames_to_column("label") %>%
-  rename(BSR = `Dimension 2`) %>%
-  mutate(
-    outline_color = ifelse(abs(BSR) > 2, "black", "grey70"),
-    outline_size  = ifelse(abs(BSR) > 2, 2, 0.3)
-  )
-
-pls_lv2_brain <- brJ_df_lv2 %>%
-  ggplot() +
-  geom_brain(
-    atlas = dk,
-    position = position_brain(hemi ~ side),
-    aes(fill = BSR,
-        colour = outline_color,
-        linewidth = outline_size)
-  ) +
-  scale_fill_gradient2(
-    low = "blue", mid = "white", high = "red",
-    midpoint = 0, limits = c(-4, 4),
-    name = "Bootstrap Ratio"
-  ) +
-  scale_colour_identity() +
-  scale_linewidth_identity() +
-  theme_void() +
-  ggtitle("Cortical Thickness BSR, LV2")
-
-brsa_df_lv2 <- brJ_df_lv2 %>%
-  filter(grepl("_sa$", label)) %>%
-  mutate(label = sub("_sa$", "", label))
-
-pls_lv2_brain_sa <- brsa_df_lv2 %>%
-  ggplot() +
-  geom_brain(
-    atlas = dk,
-    position = position_brain(hemi ~ side),
-    aes(fill = BSR,
-        colour = outline_color,
-        linewidth = outline_size)
-  ) +
-  scale_fill_gradient2(
-    low = "blue", mid = "white", high = "red",
-    midpoint = 0, limits = c(-4, 4),
-    name = "Bootstrap Ratio"
-  ) +
-  scale_colour_identity() +
-  scale_linewidth_identity() +
-  theme_void() +
-  ggtitle("Surface Area BSR, LV2")
-
-# Create a coronal-only aseg atlas (new object so LV1 code keeps working)
-aseg_coronal_lv2 <- aseg
-aseg_coronal_lv2$data <- aseg$data %>%
-  filter(side == "coronal")
-
-subcort_pls_lv2_brain <- brJ_df_lv2 %>%
-  ggplot() +
-  geom_brain(
-    atlas = aseg_coronal_lv2,
-    aes(fill = BSR,
-        colour = outline_color,
-        linewidth = outline_size)
-  ) +
-  scale_fill_gradient2(
-    low = "blue", mid = "white", high = "red",
-    midpoint = 0, limits = c(-4, 4),
-    name = "Bootstrap Ratio"
-  ) +
-  scale_colour_identity() +
-  scale_linewidth_identity() +
-  theme_void() +
-  ggtitle("Subcortical Vols, LV2")
-
-# --- Optional: show LV2 panel (patchwork) ---
-pls_lv2_behav + pls_lv2_brain + pls_lv2_brain_sa + subcort_pls_lv2_brain
-
-```
 
 ```{r}
 
@@ -804,98 +685,4 @@ plot2 <- plot2.lv.2$zeMap_background +
     labs(y = "Latent 2 - y", x = "Latent 2 - x")
 
 plot2 + theme_modern()
-```
-
-```{python}
-import os
-import numpy as np
-import pandas as pd
-
-from brainstat.stats.terms import FixedEffect, MixedEffect
-from brainstat.stats.SLM import SLM
-
-# --- EDIT THESE TWO PATHS if you want to run SLM ---
-design_path = "/Users/johnanderson/Desktop/Centile_Brain_Data/design.csv"
-Y_path      = "/Users/johnanderson/Desktop/Centile_Brain_Data/Y_matrix.csv"
-
-# --- Your BSR file (this one you already have working) ---
-bsr_path = "/Users/johnanderson/Desktop/Centile_Brain_Data/BSR_PLScortical.csv"
-
-# Load BSR
-if not os.path.exists(bsr_path):
-    raise FileNotFoundError(f"BSR file not found: {bsr_path}")
-
-bsr = pd.read_csv(bsr_path, index_col=0).to_numpy().squeeze()
-print("Loaded bsr:", bsr.shape)
-
-thr = 3.0
-sig = np.abs(bsr) >= thr
-print(f"{sig.sum()} / {sig.size} pass |BSR| >= {thr}")
-
-
-# Try to load df and Y (optional)
-df = None
-Y = None
-
-if os.path.exists(design_path):
-    df = pd.read_csv(design_path)
-    print("Loaded df:", df.shape)
-    print("df columns:", list(df.columns))
-else:
-    print("Design file not found (SLM will be skipped):", design_path)
-
-if os.path.exists(Y_path):
-    Y = pd.read_csv(Y_path, index_col=0).to_numpy()
-    print("Loaded Y:", Y.shape)
-else:
-    print("Y matrix file not found (SLM will be skipped):", Y_path)
-
-# If df and Y exist, run SLM; otherwise stop cleanly.
-if df is not None and Y is not None:
-    required = ["AGE", "SEX", "SUB_ID"]
-    missing_cols = [c for c in required if c not in df.columns]
-    if missing_cols:
-        raise ValueError(f"Design file is missing columns: {missing_cols}")
-
-    if Y.shape[0] != df.shape[0]:
-        raise ValueError(f"Row mismatch: Y has {Y.shape[0]} rows, df has {df.shape[0]}")
-
-    model = FixedEffect(df["AGE"]) + FixedEffect(df["SEX"]) + MixedEffect(df["SUB_ID"])
-    contrast = df["AGE"]
-
-    slm = SLM(model=model, contrast=contrast, two_tailed=False, correction=["fdr"])
-    slm.fit(Y)
-
-    print("SLM fit done. t shape:", np.array(slm.t).shape)
-else:
-    print("Skipping SLM because df and/or Y are not available.")
-    print("If you only meant to work with BSR, you can threshold it next.")
-
-
-```
-
-```{python}
-from brainstat.datasets import fetch_gradients
-import numpy as np
-
-# These are already DK68 region means!
-gradients = fetch_gradients()   # shape (68, 10)
-
-# gradient 1
-grad1_parcel = gradients[:, 0]
-
-bsr_py = np.asarray(bsr)  # reticulate R numeric vector → NumPy
-
-
-r = np.corrcoef(bsr_py, grad1_parcel)[0, 1]
-print("Correlation with Gradient 1:", r)
-
-```
-
-WM Vol
-
-```{r}
-wmvol <- read_csv("/Users/johnanderson/Desktop/Centile_Brain_Data/bilcor/BIDS/derivatives/CAT12_Derivatives/ROI_lpba40_Vwm.csv")
-
-cors_df <- merge(pls_loadings_cor, wmvol, by = "Subject_ID")
 ```
