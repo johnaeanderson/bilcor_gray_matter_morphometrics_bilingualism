@@ -25,19 +25,6 @@ You can add options to executable code like this
 ```{r}
 CT <- read_csv("~/Desktop/Centile_Brain_Data/Updated_November12_2025/centile_output/Centile_analysis_thickness.csv")
 
-FD <- FD %>%
-  rename_with(~ sub("^l", "lh_", .)) %>%
-  rename_with(~ sub("^r", "rh_", .))
-names(FD)[grepl("^(lh|rh)", names(FD))] <- paste0(names(FD)[grepl("^(lh|rh)", names(FD))], "_FD")
-
-
-
-Gyrif <- Gyrif %>%
-  rename_with(~ sub("^l", "lh_", .)) %>%
-  rename_with(~ sub("^r", "rh_", .))
-names(Gyrif)[grepl("^(lh|rh)", names(Gyrif))] <- paste0(names(Gyrif)[grepl("^(lh|rh)", names(Gyrif))], "_gyrif")
-
-
 demo2 <- read_excel("~/Desktop/Centile_Brain_Data/2025-11-12_BILCOR_descriptives.xlsx")
 
 demo <- demo2 %>% dplyr::select(ID, age, sex)
@@ -49,19 +36,6 @@ demo <- demo %>%
   ) %>%
   dplyr::select(Subject_ID, age, gender)  # reorder/rename columns
 
-CRI <- demo2 %>%
-  dplyr::mutate(
-    Subject_ID = str_replace(ID, "^BILCOR", "sub-"),  # replace prefix
-    gender = recode(sex, Male = "M", Female = "F")  # recode values
-  ) %>%
-  dplyr::select(Subject_ID, age, gender,moca,blocks,vocab,highest_edu,CRI_Education,CRI_WorkingActivity,CRI_LeisureTime,CRI_Total)  # reorder/rename columns
-
-snr <- demo2 %>%
-  dplyr::mutate(
-    Subject_ID = str_replace(ID, "^BILCOR", "sub-"),  # replace prefix
-    gender = recode(sex, Male = "M", Female = "F")  # recode values
-  ) %>%
-  dplyr::select(Subject_ID, av_snr)  # reorder/rename columns
 
 verbalfluency <- read_csv("~/Desktop/Centile_Brain_Data/verbal_fluency.csv")
 scvol <- read_csv("~/Desktop/Centile_Brain_Data/Updated_November12_2025/centile_output/Centile_analysis_subcorticalvol.csv")
@@ -102,7 +76,7 @@ dat <- merge(dat, scvol, by = "Subject_ID")
 dat <- merge(dat, surfacearea, by = "Subject_ID")
 #dat <- merge(dat, Gyrif, by = "Subject_ID")
 #dat <- merge(dat, FD, by = "Subject_ID")
-dat <- merge(dat, FA, by = "Subject_ID")
+#dat <- merge(dat, FA, by = "Subject_ID")
 dat$age
 
 target_col <- "Non_English_Social_Use"
@@ -125,42 +99,9 @@ cors_df <- lapply(roi_cols, function(col) {
   bind_rows()
 
 
-  
-#   # Try to extract the correct p-value
-# # Run qad for each ROIlibrary(dplyr)
-# 
-# library(dplyr)
-# 
-# corsqad_df <- lapply(roi_cols, function(col) {
-#   test <- suppressWarnings(
-#     qad(dat[[target_col]], dat[[col]], p.value = TRUE)
-#   )
-# 
-#   # Normalize coef names to avoid hidden whitespace issues
-#   results_df <- as.data.frame(test$results)
-#   results_df$coef <- trimws(as.character(results_df$coef))
-#   if ("max.dependence" %in% results_df$coef) {
-#     pval <- results_df$p.values[results_df$coef == "max.dependence"]
-#   } else {
-#     message("⚠️ 'max.dependence' missing for: ", col)
-#     pval <- NA_real_
-#   }
-# 
-#   data.frame(
-#     label = col,
-#     max_dependence = test$max.dependence,
-#     p_value = pval
-#   )
-# }) %>%
-#   bind_rows()
-
-
-
-
 cors_df <- cors_df %>%
   mutate(p_fdr = p.adjust(p_value, method = "fdr"))
 
-#dat <- dplyr::filter(dat, age_group=="Young")
 ```
 
 The `echo: false` option disables the printing of code (only output is displayed).
